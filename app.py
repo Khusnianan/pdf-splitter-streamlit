@@ -7,7 +7,6 @@ from pypdf import PdfReader, PdfWriter
 st.set_page_config(page_title="PDF Splitter & Merger", page_icon="📑", layout="centered")
 
 def parse_ranges(ranges_str, max_page):
-    """Parse a ranges string like '1-3,5,7-9' into sorted unique 1-based page numbers."""
     pages = set()
     if not ranges_str.strip():
         return []
@@ -21,7 +20,7 @@ def parse_ranges(ranges_str, max_page):
             except ValueError:
                 raise ValueError(f"Rentang tidak valid: '{part}'")
             if start < 1 or end < 1 or start > max_page or end > max_page or start > end:
-                raise ValueError(f"Rentang di luar batas halaman: '{part}' (maks {max_page})")
+                raise ValueError(f"Rentang di luar batas: '{part}' (maks {max_page})")
             pages.update(range(start, end + 1))
         else:
             try:
@@ -101,19 +100,21 @@ def split_odd_even(reader: PdfReader, mode: str):
         outputs.append(("even_pages.pdf", bio.getvalue()))
     return outputs
 
-def merge_all(reader: PdfReader):
+def merge_files(file_list):
     writer = PdfWriter()
-    for page in reader.pages:
-        writer.add_page(page)
+    for file in file_list:
+        reader = PdfReader(file)
+        for page in reader.pages:
+            writer.add_page(page)
     bio = BytesIO()
     writer.write(bio)
     bio.seek(0)
-    return [("merged_all.pdf", bio.getvalue())]
+    return [("merged_files.pdf", bio.getvalue())]
 
 st.title("📑 PDF Splitter & Merger")
-st.write("Unggah file PDF dan pilih mode pemisahan atau penggabungan.")
+st.write("Unggah file PDF untuk dipisahkan atau digabungkan.")
 
-uploaded_file = st.file_uploader("Unggah PDF", type=["pdf"])
+uploaded_files = st.file_uploader("Unggah PDF", type=["pdf"], accept_multiple_files=True)
 
 with st.expander("⚙️ Opsi", expanded=True):
     mode = st.radio(
@@ -123,7 +124,7 @@ with st.expander("⚙️ Opsi", expanded=True):
             "Rentang Halaman Kustom",
             "Setiap N Halaman",
             "Halaman Ganjil/Genap",
-            "Gabungkan Semua Halaman"
+            "Gabungkan Beberapa File PDF"
         ],
         index=0
     )
@@ -142,14 +143,22 @@ with col2:
 
 st.markdown("---")
 
-if uploaded_file is not None:
+if uploaded_files:
     try:
-        reader = PdfReader(uploaded_file)
-        total_pages = len(reader.pages)
-        st.info(f"File: **{uploaded_file.name}** • {total_pages} halaman")
-        
-        if st.button("🚀 Proses", use_container_width=True):
-            outputs = []
+        outputs = []
+
+        if mode == "Gabungkan Beberapa File PDF":
+            if len(uploaded_files) < 2:
+                st.warning("Minimal unggah 2 file PDF untuk digabung.")
+            else:
+                outputs = merge_files(uploaded_files)
+        else:
+            # hanya gunakan file pertama untuk mode split
+            file = uploaded_files[0]
+            reader = PdfReader(file)
+            total_pages = len(reader.pages)
+            st.info(f"File: **{file.name}** • {total_pages} halaman")
+
             if mode == "Setiap Halaman Terpisah":
                 outputs = split_each_page(reader)
             elif mode == "Rentang Halaman Kustom":
@@ -163,12 +172,8 @@ if uploaded_file is not None:
             elif mode == "Halaman Ganjil/Genap":
                 m = "odd" if odd_even == "Ganjil saja" else ("even" if odd_even == "Genap saja" else "both")
                 outputs = split_odd_even(reader, m)
-            elif mode == "Gabungkan Semua Halaman":
-                outputs = merge_all(reader)
 
-            if not outputs:
-                st.stop()
-
+        if outputs:
             mem_zip = BytesIO()
             with ZipFile(mem_zip, mode="w", compression=ZIP_DEFLATED) as zf:
                 for fname, data in outputs:
@@ -185,7 +190,8 @@ if uploaded_file is not None:
                 mime="application/zip",
                 use_container_width=True
             )
+
     except Exception as e:
         st.error(f"Terjadi kesalahan: {e}")
 else:
-    st.info("Silakan unggah berkas PDF untuk mulai.")
+    st.info("Silakan unggah 1 atau beberapa berkas PDF.")
