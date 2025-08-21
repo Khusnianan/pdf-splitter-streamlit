@@ -4,7 +4,7 @@ from io import BytesIO
 from zipfile import ZipFile, ZIP_DEFLATED
 from pypdf import PdfReader, PdfWriter
 
-st.set_page_config(page_title="PDF Splitter", page_icon="🔪", layout="centered")
+st.set_page_config(page_title="PDF Splitter & Merger", page_icon="📑", layout="centered")
 
 def parse_ranges(ranges_str, max_page):
     """Parse a ranges string like '1-3,5,7-9' into sorted unique 1-based page numbers."""
@@ -46,14 +46,11 @@ def split_each_page(reader: PdfReader):
 
 def split_by_ranges(reader: PdfReader, page_list):
     outputs = []
-    writer = PdfWriter()
     current_start = None
-    # Group contiguous pages into one file
     for i, p in enumerate(page_list):
         if current_start is None:
             current_start = p
         if i == len(page_list) - 1 or page_list[i+1] != p + 1:
-            # flush group current_start..p
             writer = PdfWriter()
             for k in range(current_start - 1, p):
                 writer.add_page(reader.pages[k])
@@ -104,15 +101,30 @@ def split_odd_even(reader: PdfReader, mode: str):
         outputs.append(("even_pages.pdf", bio.getvalue()))
     return outputs
 
-st.title("🔪 PDF Splitter – Pisahkan Halaman PDF")
-st.write("Unggah file PDF dan pisahkan sesuai kebutuhan Anda.")
+def merge_all(reader: PdfReader):
+    writer = PdfWriter()
+    for page in reader.pages:
+        writer.add_page(page)
+    bio = BytesIO()
+    writer.write(bio)
+    bio.seek(0)
+    return [("merged_all.pdf", bio.getvalue())]
+
+st.title("📑 PDF Splitter & Merger")
+st.write("Unggah file PDF dan pilih mode pemisahan atau penggabungan.")
 
 uploaded_file = st.file_uploader("Unggah PDF", type=["pdf"])
 
-with st.expander("⚙️ Opsi Pemisahan", expanded=True):
+with st.expander("⚙️ Opsi", expanded=True):
     mode = st.radio(
-        "Pilih mode pemisahan:",
-        options=["Setiap Halaman Terpisah", "Rentang Halaman Kustom", "Setiap N Halaman", "Halaman Ganjil/Genap"],
+        "Pilih mode:",
+        options=[
+            "Setiap Halaman Terpisah",
+            "Rentang Halaman Kustom",
+            "Setiap N Halaman",
+            "Halaman Ganjil/Genap",
+            "Gabungkan Semua Halaman"
+        ],
         index=0
     )
     if mode == "Rentang Halaman Kustom":
@@ -122,13 +134,11 @@ with st.expander("⚙️ Opsi Pemisahan", expanded=True):
     elif mode == "Halaman Ganjil/Genap":
         odd_even = st.selectbox("Pilih:", options=["Ganjil saja", "Genap saja", "Keduanya"], index=0)
 
-col1, col2, col3 = st.columns(3)
+col1, col2 = st.columns(2)
 with col1:
     add_suffix = st.text_input("Tambahkan suffix nama file (opsional)", value="split")
 with col2:
-    zip_name = st.text_input("Nama berkas ZIP hasil", value="split_result.zip")
-with col3:
-    keep_meta = st.checkbox("Pertahankan metadata (jika ada)", value=False, help="Jika dicentang, upaya mempertahankan metadata dokumen.")
+    zip_name = st.text_input("Nama berkas ZIP hasil", value="result.zip")
 
 st.markdown("---")
 
@@ -136,9 +146,9 @@ if uploaded_file is not None:
     try:
         reader = PdfReader(uploaded_file)
         total_pages = len(reader.pages)
-        st.info(f"File terdeteksi: **{uploaded_file.name}** • {total_pages} halaman")
+        st.info(f"File: **{uploaded_file.name}** • {total_pages} halaman")
         
-        if st.button("🔪 Proses Pemisahan", use_container_width=True):
+        if st.button("🚀 Proses", use_container_width=True):
             outputs = []
             if mode == "Setiap Halaman Terpisah":
                 outputs = split_each_page(reader)
@@ -153,11 +163,12 @@ if uploaded_file is not None:
             elif mode == "Halaman Ganjil/Genap":
                 m = "odd" if odd_even == "Ganjil saja" else ("even" if odd_even == "Genap saja" else "both")
                 outputs = split_odd_even(reader, m)
+            elif mode == "Gabungkan Semua Halaman":
+                outputs = merge_all(reader)
 
             if not outputs:
                 st.stop()
 
-            # Build ZIP in-memory
             mem_zip = BytesIO()
             with ZipFile(mem_zip, mode="w", compression=ZIP_DEFLATED) as zf:
                 for fname, data in outputs:
@@ -170,11 +181,11 @@ if uploaded_file is not None:
             st.download_button(
                 "⬇️ Unduh Hasil (ZIP)",
                 data=mem_zip,
-                file_name=zip_name or "split_result.zip",
+                file_name=zip_name or "result.zip",
                 mime="application/zip",
                 use_container_width=True
             )
     except Exception as e:
-        st.error(f"Terjadi kesalahan saat memproses PDF: {e}")
+        st.error(f"Terjadi kesalahan: {e}")
 else:
-    st.info("Silakan unggah berkas PDF untuk mulai memisahkan.")
+    st.info("Silakan unggah berkas PDF untuk mulai.")
